@@ -1,0 +1,13 @@
+bin
+.metadata
+*~
+.*.swp
+*.qch
+*.qhc
+target/
+QtSpim/QtSpim.pro.user*
+QtSpim-build-*
+build
+build32
+build64
+build-QtSpim-*
