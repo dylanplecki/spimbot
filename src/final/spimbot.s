@@ -96,6 +96,7 @@ main:
 	lw $t1, FRUIT_ID
 	
 	beq $t1, $t5, main_skip
+	
 	li $t0, 420
 	sw $t0, TIMER
 	
@@ -189,9 +190,9 @@ go_to_location:
 	lw $t1, BOT_Y
 	
 	bge $t0, $a0, botX_Greater
-	bge	$t
+	bge	$a0, $t0, botX_Lesser
 	bge $t1, $a1, botY_Greater
-	
+	bge $a1, $t1, botY_Lesser
 
 
 botX_Greater:
