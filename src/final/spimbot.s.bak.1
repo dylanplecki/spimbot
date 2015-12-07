@@ -1,0 +1,151 @@
+# syscall constants
+PRINT_STRING  = 4
+
+# spimbot constants
+VELOCITY      = 0xffff0010
+ANGLE         = 0xffff0014
+ANGLE_CONTROL = 0xffff0018
+BOT_X         = 0xffff0020
+BOT_Y         = 0xffff0024
+
+OTHER_BOT_X = 0xffff00a0
+OTHER_BOT_Y = 0xffff00a4
+
+FRUIT_SMOOSHED_ACK = 0xffff0064
+FRUIT_SMOOSHED_INT_MASK = 0x2000
+
+FRUIT_SMASH = 0xffff0068
+FRUIT_SCAN    = 0xffff005c
+
+BONK_MASK     = 0x1000
+BONK_ACK      = 0xffff0060
+
+TIMER         = 0xffff001c
+TIMER_MASK    = 0x8000
+TIMER_ACK     = 0xffff006c
+
+OUT_OF_ENERGY_ACK       = 0xffff00c4
+OUT_OF_ENERGY_INT_MASK  = 0x4000
+
+GET_ENERGY = 0xffff00c8
+
+REQUEST_PUZZLE = 0xffff00d0
+SUBMIT_SOLUTION = 0xffff00d4
+
+REQUEST_PUZZLE_ACK = 0xffff00d8
+REQUEST_PUZZLE_INT_MASK = 0x800
+
+REQUEST_WORD = 0xffff00dc
+
+SMOOSHED: .word 0
+
+.text
+main:
+	# your code
+	li	$t4, BONK_MASK				# bonk interrupt bit
+	or $t4, $t4, FRUIT_SMOOSHED_INT_MASK
+	or $t4, $t4, TIMER_MASK
+	or	$t4, $t4, 1				# global interrupt enable
+	mtc0	$t4, $12				# set interrupt mask (Status register)
+
+	li $t0, 0
+	sw $t0, VELOCITY
+
+j main
+
+
+	
+
+
+.kdata				# interrupt handler data (separated just for readability)
+chunkIH:	.space 12	# space for two registers
+non_intrpt_str:	.asciiz "Non-interrupt exception\n"
+unhandled_str:	.asciiz "Unhandled interrupt type\n"
+
+.ktext 0x80000180
+interrupt_handler:
+.set noat
+	move	$k1, $at		# Save $at                               
+.set at
+	la	$k0, chunkIH
+	sw	$a0, 0($k0)		# Get some free registers                  
+	sw	$a1, 4($k0)		# by storing them to a global variable 
+	sw $v0, 8($k0)    
+
+	mfc0	$k0, $13		# Get Cause register                       
+	srl	$a0, $k0, 2                
+	and	$a0, $a0, 0xf		# ExcCode field                            
+	bne	$a0, 0, non_intrpt         
+
+interrupt_dispatch:			# Interrupt:                             
+	mfc0	$k0, $13		# Get Cause register, again                 
+	beq	$k0, 0, done		# handled all outstanding interrupts     
+
+	and	$a0, $k0, BONK_MASK	# is there a bonk interrupt?                
+	bne	$a0, 0, bonk_interrupt   
+
+	and	$a0, $k0, TIMER_MASK	# is there a timer interrupt?
+	bne	$a0, 0, timer_interrupt
+
+	and 	$a0, $k0, FRUIT_SMOOSHED_INT_MASK
+	bne	$a0, 0, smooshed_interrupt
+
+	# add dispatch for other interrupt types here.
+
+	li	$v0, PRINT_STRING	# Unhandled interrupt types
+	la	$a0, unhandled_str
+	syscall 
+	j	done
+
+bonk_interrupt:
+	lw $a1, SMOOSHED
+
+	# Check if there are any caught fruit and if so smash
+	beq $a1, $zero, ack
+	sw  $a1, FRUIT_SMASH
+	
+	add $a1, $a1, -1				# Smash one then decrease smoosh count
+	sw  $a1, SMOOSHED    
+	
+
+ack:
+	sw	$a1, BONK_ACK		# acknowledge interrupt
+
+	li	$a0, 0
+	sw	$a0, VELOCITY		# drive
+	
+	j	interrupt_dispatch	# see if other interrupts are waiting
+
+timer_interrupt:
+	sw	$a1, TIMER_ACK		# acknowledge interrupt
+
+	j	interrupt_dispatch	# see if other interrupts are waiting\
+
+smooshed_interrupt:
+	sw $a0, FRUIT_SMOOSHED_ACK
+
+	lw $a1, SMOOSHED
+	add $a1, $a1, 1			# add one to global variable every interruupt
+	sw $a1, SMOOSHED
+
+	j interrupt_dispatch
+	
+
+non_intrpt:				# was some non-interrupt
+	li	$v0, PRINT_STRING
+	la	$a0, non_intrpt_str
+	syscall				# print out an error message
+	# fall through to done
+
+done:
+	la	$k0, chunkIH
+	lw	$a0, 0($k0)		# Restore saved registers
+	lw	$a1, 4($k0)
+	lw $v0, 8($k0)
+.set noat
+	move	$at, $k1		# Restore $at
+.set at 
+	eret
+
+
+
