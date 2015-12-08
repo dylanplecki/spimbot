@@ -20,7 +20,7 @@ FRUIT_SMASH   = 0xffff0068
 SCAN_X        = 0xffff0050
 SCAN_Y        = 0xffff0054
 SCAN_RADIUS   = 0xffff0058
-FRUIT_SCAN    = 0xffff005c
+FRUIT_SCAN  = 0xffff005c
 
 BONK_MASK     = 0x1000
 BONK_ACK      = 0xffff0060
