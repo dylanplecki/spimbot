@@ -74,6 +74,7 @@ FRUIT_ID: .word 0
 TAN_FRUIT: .word 0 
 FRUIT_PTR: .word 0
 
+test_puzzle: .byte 1
 to_solve_puzzle: .byte 0
 
 .text
@@ -81,6 +82,8 @@ main:
 	
 	# TODO
 	li	$t4, BONK_MASK				# bonk interrupt bit
+	or $t4, $t4, ENERGY_MASK
+	or $t4, $t4, REQ_PUZ_MASK
 	or $t4, $t4, SMOOSH_MASK
 	or $t4, $t4, TIMER_MASK
 	or	$t4, $t4, 1				# global interrupt enable
@@ -104,6 +107,19 @@ m_if_solve_puzzle:
 	jal	solve_puzzle
 m_end_if_spuzzle:
 	
+m_if_test_puzzle:
+	la  $t0, test_puzzle
+	and	$t1, $t1, $0
+	lb	$t1, 0($t0)
+	beq	$t1, $0, m_end_if_tpuzzle
+	sb	$0, 0($t0)
+	jal	start_puzzle
+m_end_if_tpuzzle:
+
+
+	# DEBUG: Short-circuit
+	j main_loop
+
 	li $t6, 420
 	sw $t6, TIMER
 	
@@ -133,7 +149,7 @@ not_null:
 	
 	# We should write if statement here because
 	# this will solve every new Fruit on screen
-	jal start_puzzle
+	#jal start_puzzle
 	
 	jal predicted_fallout
 	
@@ -239,27 +255,35 @@ dont_chase:
 #######################
 
 catchable:
-	lw $t0, BOT_X
-	lw $t1, BOT_Y
+	sub	$sp, $sp, 12
+	sw	$ra, 0($sp)
+	sw	$s0, 4($sp)
+	sw	$s1, 8($sp)
+	lw	$s0, BOT_X
+	lw	$s1, BOT_Y
 	
 	# Distance Formula
-	sub $a0, $a0, $t0	  # x value difference
+	sub $a0, $a0, $s0	  # x value difference
 	abs $a0, $a0
-	sub $a1, $a1, $t1     # Y value difference
+	sub $a1, $a1, $s1     # Y value difference
 	abs $a1, $a1
 	
-	jal euclidean_dis
+	jal euclidean_dist
 	
-	div $t0, $v0, 100	# time for fruit
-	div $t1, $v0, 1000	# time for robot
+	div $s0, $v0, 100	# time for fruit
+	div $s1, $v0, 1000	# time for robot
 	
-	bge $t1, $t0, end
+	bge $s1, $s0, c_end
 	li $v0, 1
-	jr $ra
-
-end:
+	j c_return
+c_end:
 	li $v0, 0
-	jr $ra
+c_return:
+	lw	$ra, 0($sp)
+	lw	$s0, 4($sp)
+	lw	$s1, 8($sp)
+	add	$sp, $sp, 12
+	jr	$ra
 
 
 #####################################
