@@ -331,6 +331,8 @@ at_location:
 	lw  $s1, 8($sp)
 	add $sp, $s0, 12
 	jr	$ra #just returns to whatever called it
+
+
 ###########################################
 # fruit* find_closest_fruit(int minDistY) #
 ###########################################
@@ -561,7 +563,9 @@ sp_c_loop:
 	move	$a2, $s4
 	move	$a3, $s5
 	jal	search_neighbors
-	sw	$v0, SUBMIT_SOLUTION
+	beq	$v0, $0, sp_cont_loop			# Continue loop if word not found
+	sw	$v0, SUBMIT_SOLUTION			# Submit solution if nodes are available
+	j	sp_return						# Return function
 sp_cont_loop:
 	add	$s5, $s5, 1
 	j	sp_c_loop
@@ -570,6 +574,9 @@ sp_end_c_loop:
 	j	sp_r_loop
 sp_end_r_loop:
 sp_return:
+	# Reset node pointer
+	la  $t0, node_memory
+	sw	$t0, new_node_address
 	# Return
 	lw	$ra, 0($sp)
 	lw	$s0, 4($sp)
