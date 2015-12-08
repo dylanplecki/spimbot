@@ -553,10 +553,10 @@ sp_c_loop:
 	mul		$t0, $s4, $s3				# next_row * num_cols
 	add		$t0, $t0, $s5				# next_row * num_cols + next_col
 	add		$t0, $t0, $s0				# &(puzzle[next_row * num_cols + next_col])
-	lb		$t0, 0($t0)
+	lb		   $t0, 0($t0)
 	bne		$t0, $s6, sp_cont_loop		# Continue loop if puzzle[i][j] != word[0]
 	# Call to search_neighbors
-	move	$a0, $s0
+   sub   $a0, $s0, 8
 	move	$a1, $s1
 	move	$a2, $s4
 	move	$a3, $s5
@@ -588,7 +588,7 @@ sp_return:
 ############################################################################
 search_neighbors: # TODO: Check for wrap-around scenarios
 	# Run recursive base case
-	bne		$a1, $0, sn_end_base_case	# if (word == NULL)
+	bne	$a1, $0, sn_end_base_case	# if (word == NULL)
 	move	$v0, $0						# return NULL
 	jr		$ra
 sn_end_base_case:
@@ -604,7 +604,7 @@ sn_end_base_case:
 	# Get number of rows/columns
 	lw		$s3, 0($a0)					# rows
 	lw		$s4, 4($a0)					# columns
-	add		$a0, $a0, 8					# move to puzzle address
+	add	$a0, $a0, 8					# move to puzzle address
 	# Initialize for loop
 	move	$s0, $0						# int i = 0
 sn_for_loop:
@@ -617,17 +617,28 @@ sn_for_loop:
 	# Get next_row, next_col, num_rows, num_cols
 	mul		$s2, $s0, 8					# 2 col x 4 bytes
 	add		$s2, $s2, $t0				# Get address offset
-	lw		$s1, 0($s2)					# directions[i][0]
-	lw		$s2, 4($s2)					# directions[i][1]
+	lw		   $s1, 0($s2)					# directions[i][0]
+	lw		   $s2, 4($s2)					# directions[i][1]
 	add		$s1, $s1, $a2				# int next_row = row + directions[i][0]
 	add		$s2, $s2, $a3				# int next_col = col + directions[i][1]
-	# Load temporary 'if' values
-	li		$t0, -1
-	# Check boundary (1L 'if' statement)
-	ble		$s1, $t0, sn_end_bndeq_check	# if (next_row > -1)
-	bge		$s1, $s3, sn_end_bndeq_check	# if (next_row < num_rows)
-	ble		$s2, $t0, sn_end_bndeq_check	# if (next_col > -1)
-	bge		$s2, $s4, sn_end_bndeq_check	# if (next_col < num_cols)
+	# Check boundary (1L 'if' statement) with wrap-around
+sn_recheck:
+	bge		$s1, $0, sn_skip_1	# if (next_row < 0)
+   add      $s1, $s3, $s1        #  next_row = num_rows + next_row
+   j        sn_recheck
+sn_skip_1:
+	blt		$s1, $s3, sn_skip_2	# if (next_row >= num_rows)
+   sub      $s1, $s1, $s3        #  next_row = next_row - num_rows
+   j        sn_recheck
+sn_skip_2:
+	bge		$s2, $0, sn_skip_3	# if (next_col < 0)
+   add      $s2, $s4, $s2        #  next_col = num_cols + next_col
+   j        sn_recheck
+sn_skip_3:
+	blt		$s2, $s4, sn_skip_4	# if (next_col >= num_cols)
+   sub      $s2, $s2, $s4        #  next_col = next_col - num_cols
+   j        sn_recheck
+sn_skip_4:
 	# Get puzzle tile address
 	mul		$s5, $s1, $s4				# next_row * num_cols
 	add		$s5, $s5, $s2				# next_row * num_cols + next_col
@@ -653,18 +664,17 @@ sn_end_nullc_check:
 	li		$t0, 42						# '*'
 	sb		$t0, 0($s5)					# puzzle[next_row * num_cols + next_col] = '*'
 	# Store arguments for function call
-	sub		$sp, $sp, 16
+	sub	$sp, $sp, 16
 	sw		$a0, 0($sp)
 	sw		$a1, 4($sp)
 	sw		$a2, 8($sp)
 	sw		$a3, 12($sp)
 	# Search for next char in word
-	add		$a1, $a1, 1					# word + 1
+	sub	$a0, $a0, 8
+	add	$a1, $a1, 1					# word + 1
 	move	$a2, $s1
 	move	$a3, $s2
-	sub		$a0, $a0, 8
-	jal		search_neighbors			# search_neighbors(puzzle, word + 1, next_row, next_col)
-	add		$a0, $a0, 8
+	jal	search_neighbors			# search_neighbors(puzzle, word + 1, next_row, next_col)
 	# Load arguments after function call
 	lw		$a0, 0($sp)
 	lw		$a1, 4($sp)
