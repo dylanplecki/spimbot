@@ -70,9 +70,10 @@ FRUIT_X: .word 0
 FRUIT_Y: .word 0
 FRUIT_ID: .word 0 
 
-ANGLE_FRUIT: .word 0 
+TAN_FRUIT: .word 0 
+FRUIT_PTR: .word 0
 
-solve_puzzle: .word 0
+solve_puzzle: .byte 0
 
 .text
 main:
@@ -84,22 +85,44 @@ main:
 	or	$t4, $t4, 1				# global interrupt enable
 	mtc0	$t4, $12
 
+	la $t0, fruit_data 
+	sw $t0, FRUIT_SCAN
+	sw $t0, FRUIT_PTR
 	
-	
+main_loop:
 	la $t0, fruit_data 
 	sw $t0, FRUIT_SCAN
 	
-	li $t0, 420
-	sw $t0, TIMER
+	# Solve a puzzle if requested
+m_if_solve_puzzle:
+	la  $t0, solve_puzzle
+	and	$t1, $t1, $0
+	lb	$t1, 0($t0)
+	beq	$t1, $0, m_end_if_spuzzle
+	sb	$0, 0($t0)
+	jal	solve_puzzle
+m_end_if_spuzzle:
 	
+	li $t6, 420
+	sw $t6, TIMER
+	
+	lw $t3, FRUIT_PTR
+	lw $t3, 0($t3)
+	
+	bne $t3, $0, not_null
+	sw $t0, FRUIT_PTR
+	
+not_null:
+	lw $t0, FRUIT_PTR
 	lw $t5, 0($t0)
 	lw $t1, FRUIT_ID
 	
+	# if fruit ID is the same we already know angle
+	# and are moving towards it 
 	beq $t1, $t5, main_skip
 	
-	li $t0, 420
+	li $t0, 420			# set timer 
 	sw $t0, TIMER
-	
 	sw $t5, FRUIT_ID
 	
 	lw $t1, 8($t0)			# Fruit in x position
@@ -107,24 +130,101 @@ main:
 	lw $t2, 12($t0) 		# Fruit in y position
 	sw $t2, FRUIT_Y
 	
-main_skip:
+	# We should write if statement here because
+	# this will solve every new Fruit on screen
+	jal start_puzzle
+	
+	jal predicted_fallout
+	
+	move $a0, $v0			# Move to this x value
+	move $a1, $v1			# Move to this y value
 	
 	jal chase
 	
+main_skip:
+	# Only want to solve puzzle while waiting for 
+	# the ratio between x and y
+	j main_loop
 	
-	
-	# Loop-back
-	j main
 
+###########################################
+# int x int y predictedFallout() #
+###########################################
+
+predicted_fallout:
+#TODO:
+	lw $t0, TAN_FRUIT
+	lw $t4, FRUIT_X
+	lw $t5, FRUIT_Y
+	
+	beq $t0, 0, zero
+	bge $t0, 1, postive
+	
+negative:
+	li $t1, 300
+	div $t2, $t4, $t0	# y = x / tan(theta) 
+	bge $t2, $t1, y_300
+	
+x_0:
+	li $v0, 0
+	move $v1, $t2
+	jr $ra
+	
+	
+positive: 
+	li $t1, 300	
+	sub $t1, $t1, $t4
+	div $t2, $t1, $t0			# y = (300 - x) / Tan(theta) 
+	bge $t2, $t1, y_300			# y >= 300
+	
+x_300: 
+	li $v0, 300
+	move $v1, $t2
+	jr $ra 
+	
+y_300:
+	li $v1, 300				# y = 300
+	mul	 $v0, $t0, 300
+	jr $ra
+	
+zero:
+	lw $v0, FRUIT_X
+	li $v1, 300
+	jr $ra
+
+
+
+jr $ra #wat
 
 ################
 # void chase() #
 ################
 chase:
-	# TODO
-	jal		track_fruit
-	# Set velocity and direction to chase $v0
-	jal		$ra
+	sub $sp, $sp, 12
+	sw 	$a0, 0($sp)
+	sw	$a1, 4($sp)
+	sw	$ra, 8($sp)
+	
+	jal catchable
+	
+	lw 	$a0, 0($sp)
+	lw	$a1, 4($sp)
+	lw	$ra, 8($sp)
+	
+	beq $v0, $0, dont_chase
+	
+	#TO DO: Change velocity towards Predicted fruit
+	
+dont_chase:
+	la $t0, fruit_data 
+	sw $t0, FRUIT_SCAN
+	lw $t1, FRUIT_PTR
+	add $t1, $t1, 16
+	sw $t1, FRUIT_PTR
+	
+	lw $t1, 0($t1)
+	sw $t1, FRUIT_ID		# Changing ID To Catch
+	jr		$ra
 
 
 #######################
@@ -155,60 +255,57 @@ end:
 	jr $ra
 
 
-#######################
-# fruit track_fruit() #
-#######################
-track_fruit:
-	# TODO
-	la $t0, fruit_data 
-	sw $t0, FRUIT_SCAN
-	
-	lw $t1, 8($t0) # gets first fruit's x-coord
-	lw $t2, 12($t0) # fruit's y-coord
-	lw $t3, 4($t0) # gets the point value, ie what the fruit is
-	
-	bge $t3, $7, cherry
-	bge $t3, $5, loquat
-	bge $t3, $3, guava
-	bge $t3, $2, mango
-	bge	$t3, $1, lemon
-	
-	
-	# go through each fruit in the FRUIT_SCAN with the catchable function
-	# if it returns true, track the fruit and go there
-
-lemon:
-	#find initial velocity
-	
-	
 #####################################
 # void go_to_location(int x, int y) #
 # goes to a give location           #
 #####################################
-go_to_location:
+go_to_location: # need to change this to find the angle the bot should go to, not just north south east west
 	lw $t0, BOT_X
 	lw $t1, BOT_Y
-	
-	bge $t0, $a0, botX_Greater
-	bge	$a0, $t0, botX_Lesser
-	bge $t1, $a1, botY_Greater
-	bge $a1, $t1, botY_Lesser
-
+	bgt $t0, $a0, botX_Greater
+	bgt	$a0, $t0, botX_Lesser
+	bgt $t1, $a1, botY_Greater
+	bgt $a1, $t1, botY_Lesser
 
 botX_Greater:
 	li  $t9, 180 # might be 360 or 0
 	sw  $t9, ANGLE
-	
 	li	$t8, 1
 	sw	$t8, ANGLE_CONTROL
-
 	li	$t7, 10
 	sw	$t7, VELOCITY
-
-	ble	$t0, $a0, go_to_location
+	blt	$t0, $a0, go_to_location
+	j 	botX_Greater
 	
+botX_Lesser:
+	li  $t9, 0 
+	sw  $t9, ANGLE
+	li	$t8, 1
+	sw	$t8, ANGLE_CONTROL
+	li	$t7, 10
+	sw	$t7, VELOCITY
+	bgt	$t0, $a0, go_to_location
+	j	botX_Lesser
 	
+botY_Greater:
+	li  $t9, 90
+	sw	$t9, ANGLE
+	li  $t8, 1
+	sw	$t8, ANGLE_CONTROL
+	li 	$t7, 10
+	sw	$t7, VELOCITY
+	blt	$t0, $a0, go_to_location
+	j	botY_Greater
 	
+botY_Lesser:
+	li  $t9, 270
+	sw  $t9, ANGLE
+	li	$t8, 1
+	sw	$t8, ANGLE_CONTROL
+	li	$t7, 10
+	sw	$t7, VELOCITY
+	bgt	$t0, $a0, go_to_location
+	j	botY_Lesser
 	
 
 ###########################################
@@ -303,7 +400,7 @@ sb_arctan:
 no_TURN_90:
 	bgez	$a0, pos_x 	# skip if (x >= 0)
 
-	## if (x < 0) 
+	## if (x < 0)
 	add		$v0, $v0, 180	# angle += 180;
 
 pos_x:
@@ -390,6 +487,15 @@ rn_end_for_loop:
 
 
 #######################
+# void start_puzzle() #
+#######################
+start_puzzle:
+	la  $t0, puzzle_grid
+	la  $t1, REQUEST_PUZZLE
+	sw	$t0, 0($t1)
+	jr	$ra
+
+#######################
 # void solve_puzzle() #
 #######################
 solve_puzzle:
@@ -450,7 +556,7 @@ sp_return:
 	lw	$s5, 24($sp)
 	lw	$s6, 28($sp)
 	add	$sp, $sp, 32
-	jal	$ra
+	jr	$ra
 
 
 ############################################################################
@@ -591,6 +697,7 @@ interrupt_handler:
 	sw	$v0, 12($k0) 
 	sw  $t0, 16($k0)
 	sw  $t1, 20($k0)
+	sw  $ra, 24($k0)
 
 	mfc0	$k0, $13	# Get Cause register                       
 	srl	$a0, $k0, 2                
@@ -621,7 +728,9 @@ interrupt_dispatch:		# Interrupt:
 
 puzzle_interrupt:
 	
-	# TODO
+	la  $a0, solve_puzzle
+	li  $a1, 1
+	sb	$a1, 0($a0)
 	
 	j	interrupt_dispatch
 
@@ -636,12 +745,19 @@ timer_interrupt:
 	
 	lw $v0, FRUIT_Y			# Fruit in last y pos
 	lw $a0, FRUIT_X			# Fruit in last x pos
-	sub $a0, $a0, $a1
-	sub $a1, $v0, $a2
+	sub $a0, $a1, $a0 
+	sub $a1, $a2, $v0
 	
-	jal sb_arctan
+	mtc1	$a0, $f0
+	mtc1	$a1, $f1
+	vt.s.w $f0, $f0		# convert from ints to floats
+	cvt.s.w $f1, $f1
+	div.s	$f0, $f1, $f0	# Tan(Theta) = (float) y / (float) x;
 	
-	sw $v0, ANGLE_FRUIT
+	cvt.w.s $f0, $f0	# convert "delta" back to integer
+	mfc1	$t0, $f6	# Tan(Theta) is now in #t0
+	
+	sw $t0, TAN_FRUIT
 	
 	
 	li $a0, 0
@@ -664,13 +780,15 @@ bonk_interrupt:
 	# TODO: When should we smash? Now
 	
 	# Check if there are any caught fruit and if so smash
-	beq $a1, $zero, ack
+	li $a2, 5
+	bge $a1, $a2, ack
 	sw  $a1, FRUIT_SMASH
-	
-	add $a1, $a1, -1				# Smash one then decrease smoosh count
+	sw  $a1, FRUIT_SMASH
+	sw  $a1, FRUIT_SMASH
+	sw  $a1, FRUIT_SMASH
+	add $a1, $a1, -4				# Smash one then decrease smoosh count
 	sw  $a1, SMOOSHED
 	
-	j	interrupt_dispatch
 
 ack:
 	sw	$a1, BONK_ACK		# acknowledge interrupt
@@ -687,57 +805,6 @@ non_intrpt:				# was some non-interrupt
 	# fall through to done
 	j done
 
-
-sb_arctan:
-	li		$v0, 0		# angle = 0;
-
-	abs		$t0, $a0	# get absolute values
-	abs		$t1, $a1
-	ble		$t1, $t0, no_TURN_90	  
-
-	## if (abs(y) > abs(x)) { rotate 90 degrees }
-	move	$t0, $a1	# int temp = y;
-	neg		$a1, $a0	# y = -x;      
-	move	$a0, $t0	# x = temp;    
-	li		$v0, 90		# angle = 90;  
-
-no_TURN_90:
-	bgez	$a0, pos_x 	# skip if (x >= 0)
-
-	## if (x < 0) 
-	add		$v0, $v0, 180	# angle += 180;
-
-pos_x:
-	mtc1	$a0, $f0
-	mtc1	$a1, $f1
-	cvt.s.w $f0, $f0	# convert from ints to floats
-	cvt.s.w $f1, $f1
-	
-	div.s	$f0, $f1, $f0	# float v = (float) y / (float) x;
-
-	mul.s	$f1, $f0, $f0	# v^^2
-	mul.s	$f2, $f1, $f0	# v^^3
-	l.s		$f3, three	# load 5.0
-	div.s 	$f3, $f2, $f3	# v^^3/3
-	sub.s	$f6, $f0, $f3	# v - v^^3/3
-
-	mul.s	$f4, $f1, $f2	# v^^5
-	l.s		$f5, five	# load 3.0
-	div.s 	$f5, $f4, $f5	# v^^5/5
-	add.s	$f6, $f6, $f5	# value = v - v^^3/3 + v^^5/5
-
-	l.s		$f8, PI		# load PI
-	div.s	$f6, $f6, $f8	# value / PI
-	l.s		$f7, F180	# load 180.0
-	mul.s	$f6, $f6, $f7	# 180.0 * value / PI
-
-	cvt.w.s $f6, $f6	# convert "delta" back to integer
-	mfc1	$t0, $f6
-	add		$v0, $v0, $t0	# angle += delta
-
-	jr 	$ra
-
-
 done:
 	la	$k0, chunkIH
 	lw	$a0, 0($k0)		# Restore saved registers
@@ -746,6 +813,7 @@ done:
 	lw	$v0, 12($k0)
 	lw  $t0, 16($k0)
 	lw  $t1, 20($k0)
+	lw  $ra, 24($k0)
 .set noat
 	move	$at, $k1	# Restore $at
 .set at 
