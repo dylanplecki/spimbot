@@ -57,7 +57,6 @@ puzzle_grid:		.space 8192
 puzzle_word:		.space 128
 .align 2
 node_memory:		.space 4096
-
 new_node_address: .word node_memory
 
 directions:
@@ -216,6 +215,7 @@ chase:
 	beq $v0, $0, dont_chase
 	
 	#TO DO: Change velocity towards Predicted fruit
+	jal go_to_location	
 	
 dont_chase:
 	la $t0, fruit_data 
@@ -226,6 +226,11 @@ dont_chase:
 	
 	lw $t1, 0($t1)
 	sw $t1, FRUIT_ID		# Changing ID To Catch
+	
+	lw $a0, 0($sp)
+	lw	$a1, 4($sp)
+	lw	$ra, 8($sp)
+	add $sp, $sp, 12
 	jr		$ra
 
 
@@ -259,57 +264,49 @@ end:
 
 #####################################
 # void go_to_location(int x, int y) #
-# goes to a give location           #
-#####################################
-go_to_location: # need to change this to find the angle the bot should go to, not just north south east west
-	lw $t0, BOT_X
-	lw $t1, BOT_Y
-	bgt $t0, $a0, botX_Greater
-	bgt	$a0, $t0, botX_Lesser
-	bgt $t1, $a1, botY_Greater
-	bgt $a1, $t1, botY_Lesser
+# goes to a give location(REWORKING TO GO WITH PAUL'S NEW CODE) #
+#####################################	
+go_to_location:
+	sub $sp, $s0, 12
+	sw	 $ra, 0($sp)
+	sw  $s0, 4($sp)
+	sw  $s1, 8($sp)
 
-botX_Greater:
-	li  $t9, 180 # might be 360 or 0
-	sw  $t9, ANGLE
-	li	$t8, 1
-	sw	$t8, ANGLE_CONTROL
-	li	$t7, 10
-	sw	$t7, VELOCITY
-	blt	$t0, $a0, go_to_location
-	j 	botX_Greater
-	
-botX_Lesser:
-	li  $t9, 0 
-	sw  $t9, ANGLE
-	li	$t8, 1
-	sw	$t8, ANGLE_CONTROL
-	li	$t7, 10
-	sw	$t7, VELOCITY
-	bgt	$t0, $a0, go_to_location
-	j	botX_Lesser
-	
-botY_Greater:
-	li  $t9, 90
-	sw	$t9, ANGLE
-	li  $t8, 1
-	sw	$t8, ANGLE_CONTROL
-	li 	$t7, 10
-	sw	$t7, VELOCITY
-	blt	$t0, $a0, go_to_location
-	j	botY_Greater
-	
-botY_Lesser:
-	li  $t9, 270
-	sw  $t9, ANGLE
-	li	$t8, 1
-	sw	$t8, ANGLE_CONTROL
-	li	$t7, 10
-	sw	$t7, VELOCITY
-	bgt	$t0, $a0, go_to_location
-	j	botY_Lesser
-	
+	move $s0, $a0
+	move $s1, $a1
 
+	lw $t9, BOT_X # bots x coord
+	lw $t8, BOT_Y # bots y coord
+	beq	$t9, $a0, at_x # check if we are at the x_coord
+	beq	$t8, $a1, at_y # check if we are at the y_coord
+	
+gtl_loop:
+	sub	$a0, $a0, $t9 # puts the fruits x - bot x into the first arg
+	sub $a1, $a1, $t8 # puts the fruits y - bot y into the second arg
+	jal sb_arctan     # v0 should have the angle we need now (Going to need to test this)
+	sw	$v0, ANGLE
+	li	$t6, 1
+	sw	$t6, ANGLE_CONTROL
+	li	$t7, 10
+	sw	$t7, VELOCITY
+	j	go_to_location
+
+at_x:
+	lw $t8, BOT_Y # bots y coord
+	beq	$t8, $s1, at_location
+	j	gtl_loop
+
+at_y:
+	lw $t8, BOT_Y # bots y coord
+	beq	$t9, $s0, at_location
+	j	gtl_loop
+	
+at_location:
+	lw	 $ra, 0($sp)
+	lw  $s0, 4($sp)
+	lw  $s1, 8($sp)
+	add $sp, $s0, 12
+	jr	$ra #just returns to whatever called it
 ###########################################
 # fruit* find_closest_fruit(int minDistY) #
 ###########################################
@@ -712,6 +709,9 @@ interrupt_dispatch:		# Interrupt:
 	beq	$k0, 0, done	# handled all outstanding interrupts     
 
 	# TODO: Add interrupts here
+	and $a0, $k0, ENERGY_MASK
+	bne $a0, 0, energy_interrupt
+	
 	and $a0, $k0, REQ_PUZ_MASK
 	bne $a0, 0, puzzle_interrupt
 	
@@ -729,7 +729,18 @@ interrupt_dispatch:		# Interrupt:
 	syscall 
 	j	done
 
+energy_interrupt:
+	sw	$a1, ENERGY_ACK		# acknowledge interrupt
+	
+	# Request Puzzle Interrupt
+	la  $t0, puzzle_grid
+	la  $t1, REQUEST_PUZZLE
+	sw	$t0, 0($t1)
+	
+	j	interrupt_dispatch
+
 puzzle_interrupt:
+	sw	$a1, REQ_PUZ_ACK	# acknowledge interrupt
 	
 	la  $a0, to_solve_puzzle
 	li  $a1, 1
