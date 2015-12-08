@@ -90,12 +90,12 @@ main:
 	mtc0	$t4, $12
 
 	la $t0, fruit_data 
-	sw $t0, SCAN_ADDRESS
+	sw $t0, FRUIT_SCAN
 	sw $t0, FRUIT_PTR
 	
 main_loop:
 	la $t0, fruit_data 
-	sw $t0, SCAN_ADDRESS
+	sw $t0, FRUIT_SCAN
 	
 	# Solve a puzzle if requested
 m_if_solve_puzzle:
@@ -235,7 +235,7 @@ chase:
 	
 dont_chase:
 	la $t0, fruit_data 
-	sw $t0, SCAN_ADDRESS
+	sw $t0, FRUIT_SCAN
 	lw $t1, FRUIT_PTR
 	add $t1, $t1, 16
 	sw $t1, FRUIT_PTR
@@ -357,7 +357,7 @@ find_closest_fruit:
         and     $s2, $s2, $0            # int cldisx
         and     $s3, $s3, $0            # int cldisy
         la      $s4, fruit_data         # fruit *curr
-        sw      $s4, SCAN_ADDRESS         # Populate array
+        sw      $s4, FRUIT_SCAN         # Populate array
 fnf_loop:
         lw      $s5, 0($s4)                 # fruit currF = *curr;
         beq     $s5, $0, fnf_return     	# if (currF == NULL) break;
@@ -793,7 +793,7 @@ timer_interrupt:
 	sw	$a1, TIMER_ACK		# acknowledge interrupt
 	
 	la $a0, fruit_data
-	sw $a0, SCAN_ADDRESS
+	sw $a0, FRUIT_SCAN
 	
 	lw $a1, 8($a0)			# Fruit in x position
 	lw $a2, 12($a0)			# Fruit in y position
