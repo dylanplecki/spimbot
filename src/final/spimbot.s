@@ -74,7 +74,7 @@ FRUIT_ID: .word 0
 TAN_FRUIT: .word 0 
 FRUIT_PTR: .word 0
 
-test_puzzle: .byte 1
+test_puzzle: .byte 0
 to_solve_puzzle: .byte 0
 
 .text
@@ -115,10 +115,6 @@ m_if_test_puzzle:
 	sb	$0, 0($t0)
 	jal	start_puzzle
 m_end_if_tpuzzle:
-
-
-	# DEBUG: Short-circuit
-	j main_loop
 
 	li $t6, 420
 	sw $t6, TIMER
