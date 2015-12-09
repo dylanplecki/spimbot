@@ -1,29 +1,27 @@
 .data
 
-SMOOSHED_COUNT: .word 0
-
 NODE_SIZE = 12
 
-# syscall constants
+# Syscall constants
 PRINT_STRING	= 4
 
-# spimbot constants
-VELOCITY	= 0xffff0010
-ANGLE		= 0xffff0014
+# Spimbot constants
+VELOCITY		= 0xffff0010
+ANGLE			= 0xffff0014
 ANGLE_CONTROL	= 0xffff0018
-BOT_X		= 0xffff0020
-BOT_Y		= 0xffff0024
+BOT_X			= 0xffff0020
+BOT_Y			= 0xffff0024
 
-BONK_MASK	= 0x1000
-BONK_ACK	= 0xffff0060
+BONK_MASK		= 0x1000
+BONK_ACK		= 0xffff0060
 
-TIMER		= 0xffff001c
-TIMER_MASK	= 0x8000
-TIMER_ACK	= 0xffff006c
+TIMER			= 0xffff001c
+TIMER_MASK		= 0x8000
+TIMER_ACK		= 0xffff006c
 
-# fruit constants
-FRUIT_SCAN	= 0xffff005c
-FRUIT_SMASH	= 0xffff0068
+# Fruit constants
+FRUIT_SCAN		= 0xffff005c
+FRUIT_SMASH		= 0xffff0068
 
 SMOOSHED_MASK	= 0x2000
 SMOOSHED_ACK	= 0xffff0064
@@ -38,14 +36,24 @@ REQUEST_WORD  = 0xffff00dc
 REQUEST_PUZZLE = 0xffff00d0
 SUBMIT_SOLUTION = 0xffff00d4
 
-# could be useful for debugging
-PRINT_INT	= 0xffff0080
+# Could be useful for debugging
+PRINT_INT		= 0xffff0080
 
-#FRUIT_SCAN = 0xffff005c
-
+# -1: nothing, 0 = need target, 1 = chasing, 2 = waiting, 3 = smash_ready, 4 = smashing
+.align 2
+BOT_STATUS:		.word 0
 
 .align 2
-fruit_data: .space 260
+smooshed_fruit:	.word 0
+
+.align 2
+current_fruit:	.space 1 # Current fruit addr being chased
+
+.align 2
+min_frtdis:		.word 5 # Default min distance to fruit
+
+.align 2
+fruit_data:		.space 260
 
 .align 2
 puzzle_grid:		.space 8192
@@ -63,127 +71,208 @@ directions:
 	.word  1  0
 	.word  0 -1
 
-.text
-	# NOTES
-	# must use bonk_interrupt
-	# once inside bonk_interrupt, you should write to the FRUIT_SMASH mem mapped io
-	# FRUIT_SMASH will only work if you are at the bottom of the map and it the interrupt handler
-	# SPIMbot is considered to be in the bonk_interrupt when the bonk bit in the Cause register is set to 1. 
-	# YOU MUST SMASH ALL FRUITS YOU WANT TO BEFORE ACKNOWLEDGING THE BONK INTERRUPT
-	# acknowledging the interrupt will clear the bonk bit in the Cause reg and all writes to FRUIT_SMASH will fail.
-	# 
-	# make use of the fruit_smooshed interrupt
+.text # Main ASM code
 
 main:
-	li	$t9, BONK_MASK
-	or	$t9, $t9, SMOOSHED_MASK
-	or  $t9, $t9, ENERGY_MASK
-	or  $t9, $t9, REQ_PUZ_MASK
-	or	$t9, $t9, 1
-	mtc0	$t9, $12
-	
+	# Initialize variables
+	la	$t0, current_fruit
+	sw	$0, 0($t0)
 
+	# Enable interrupts
+	li	$t4, TIMER_MASK		# Timer interrupt enable bit
+	or	$t4, $t4, BONK_MASK	# Bonk interrupt bit
+	or	$t4, $t4, SMOOSHED_MASK	# Smooshed interrupt bit
+	or  $t4, $t4, ENERGY_MASK
+	or  $t4, $t4, REQ_PUZ_MASK
+	or	$t4, $t4, 1			# Global interrupt enable
+	mtc0 $t4, $12			# Set interrupt mask (status register)
 
-	j moveToBottom
+	# Get bot coord addresses
+	la	$s0, BOT_STATUS
+	la	$s1, BOT_X
+	la	$s2, BOT_Y
+	la	$s3, VELOCITY
 
-moveToBottom:
-	lw	$t5, BOT_Y
-	
+	# Move to bottom
+	la	$t1, ANGLE
+	li	$t0, 90
+	sw	$t0, 0($t1)
+	la	$t1, ANGLE_CONTROL
+	li	$t0, 1
+	sw	$t0, 0($t1)
+	#la	$t1, VELOCITY
+	li	$t0, 10
+	sw	$t0, 0($s3)
+
+	# Wait until at bottom
+	li	$t0, 275			# Minimum dist from bottom
+m_bottom_loop:
+	lw	$t1, 0($s2)
+	bge $t1, $t0, m_end_bottom_loop
+	j	m_bottom_loop
+
+m_end_bottom_loop:
+	sw	$0, 0($s3)
+
+m_infinite:
+   jal	check_solve_puzzle
+
+	lw	$t0, 0($s0)
+	li	$t1, 3
+	beq	$t0, $t1, m_move_to_smash
+	bne	$t0, $0, m_cont_inf_loop
+	jal	target_fruit
+	j	m_cont_inf_loop
+
+m_move_to_smash:
+	# Drive to bottom
+	la	$t0, ANGLE
 	li	$t1, 90
-	sw	$t1, ANGLE
-
-	li	$t2, 1
-	sw	$t2, ANGLE_CONTROL
-
-	
-	bge	$t5, 290, at_bottom
-
-	j moveToBottom
-
-
-at_bottom:
-	# before moving in any direction, check SMOOSHED_COUNT and smash if there is one in there
-	# to smash go 90 degrees and go back when done smashing
-	la	$t0, fruit_data
-	sw	$t0, FRUIT_SCAN
-	
-	jal	check_solve_puzzle
-	
-	li	$t5, 4
-	lw	$t2, SMOOSHED_COUNT # loads smooshed count
-	bge	$t2, $t5, smash		# if smooshed count is >= 1, smash
-
-	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
-	lw	$t9, BOT_X # or la
-	# if target x location is greater than BOT_X, bot should go right to smoosh
-	# else bot should go left to smoosh
-	
-	bge	$t9, $t1, botXGreater
-	bge	$t1, $t9, botXLess
-
-	j	at_bottom
-
-botXGreater:
-	la	$t0, fruit_data
-	sw	$t0, FRUIT_SCAN
-	
-	jal	check_solve_puzzle
-
-	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
-	lw	$t9, BOT_X # or la
-
-	li	$t3, 180
-	sw	$t3, ANGLE
-	
-	li	$t4, 1
-	sw	$t4, ANGLE_CONTROL
-
-	li	$t5, 10
-	sw	$t5, VELOCITY
-
-	ble	$t9, $t1, at_bottom # don't know which break it should be
-
-
-	j	botXGreater
-
-
-botXLess:
-	la	$t0, fruit_data
-	sw	$t0, FRUIT_SCAN
-	
-	jal	check_solve_puzzle
-
-	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
-	lw	$t9, BOT_X # or la
-
-	li	$t3, 0
-	sw	$t3, ANGLE
-	
-	li	$t4, 1
-	sw	$t4, ANGLE_CONTROL
-
-	li	$t5, 10
-	sw	$t5, VELOCITY
-
-
-	bge	$t9, $t1, at_bottom
-
-
-
-	j botXLess	
-
-smash:
-	li	$t9, 90	
-	sw	$t9, ANGLE
-	
+	sw	$t1, 0($t0)
+	la	$t0, ANGLE_CONTROL
 	li	$t1, 1
-	sw	$t1, ANGLE_CONTROL
-	
-	li	$t2, 5
-	sw	$t2, VELOCITY
+	sw	$t1, 0($t0)
+	li	$t1, 10
+	sw	$t1, 0($s3)
 
-	j	at_bottom
+	# Update bot status
+	li	$t0, 2
+	sw	$t0, 0($s0)
 
+m_cont_inf_loop:
+	j	m_infinite			# Loop infinitely to process interrupts
+
+## Functions ##
+
+# void target_fruit() #
+target_fruit:
+	sub	$sp, $sp, 4
+	sw	$ra, 0($sp)
+
+	# Find next fruit
+	la	$a0, min_frtdis
+	lw	$a0, 0($a0)
+	jal	find_next_fruit
+	beq	$v0, $0, tf_req_timer
+	la	$t0, current_fruit
+	sw	$v0, 0($t0)
+
+	# Get X coords
+	lw	$t0, 8($v0)
+	la	$t1, BOT_X
+	lw	$t1, 0($t1)
+
+	# Get params (if statement)
+	beq	$t0, $t1, tf_ang_stay
+	blt $t0, $t1, tf_ang_left
+	j	tf_ang_right		# bgt $t0, $t1, tf_ang_right
+
+	# Below: ($t0 = angle, $t1 = velocity)
+tf_ang_stay:
+	and	$t0, $t0, $0
+	and	$t1, $t1, $0
+	j tf_end_angle
+tf_ang_left:
+	li	$t0, 180
+	li	$t1, 10
+	j tf_end_angle
+tf_ang_right:
+	and	$t0, $t0, $0
+	li	$t1, 10
+	# j tf_end_angle
+tf_end_angle:
+
+	# Set angle and velocity
+	li	$t2, 1
+	la	$t3, ANGLE
+	sw	$t0, 0($t3)
+	la	$t3, ANGLE_CONTROL
+	sw	$t2, 0($t3)
+	la	$t3, VELOCITY
+	sw	$t1, 0($t3)
+
+	#li	$t0, 1
+	#la	$t1, BOT_STATUS
+	#sb	$t0, 0($t1)
+
+	j tf_return
+
+tf_req_timer: # Schedule timer if no fruit found
+	lw	$t0, TIMER			# Current time
+	add	$t0, $t0, 100
+	sw	$t0, TIMER			# Request timer
+	#li	$t0, -1
+	#la	$t1, BOT_STATUS
+	#sb	$t0, 0($t1)
+
+tf_return:
+	lw	$ra, 0($sp)
+	add	$sp, $sp, 4
+	jr	$ra
+
+# fruit* find_next_fruit(int minDistY) #
+find_next_fruit:
+	sub	$sp, $sp, 36
+	sw	$ra, 0($sp)
+	sw	$s0, 4($sp)
+	sw	$s1, 8($sp)
+	sw	$s2, 12($sp)
+	sw	$s3, 16($sp)
+	sw	$s4, 20($sp)
+	sw	$s5, 24($sp)
+	sw	$s6, 28($sp)
+	sw	$s7, 32($sp)
+
+	# Get bot coordinates
+	la	$s0, BOT_X
+	la	$s1, BOT_Y
+	lw	$s0, 0($s0)			# int botX
+	lw	$s1, 0($s1)			# int botY
+
+	# Establish variables
+	and	$v0, $v0, $0		# fruit closest
+	and	$s2, $s2, $0		# int cldis
+	#and	$s3, $s3, $0	# int cldisy
+	la	$s4, fruit_data		# fruit *curr
+	sw	$s4, FRUIT_SCAN		# Populate array
+
+fnf_loop:
+	lw	$s5, 0($s4)			# fruit currF = *curr;
+	beq	$s5, $0, fnf_return	# if (currF == NULL) break;
+	lw	$s6, 8($s4)			# int currFX = currF.x;
+	sub	$s6, $s0, $s6		# int disXR = botX - currFX;
+	lw	$s7, 12($s4)		# int currFY = currF.y;
+	sub	$s7, $s1, $s7		# int disYR = botY - currFY;
+	ble	$s7, $0, fnf_cont_loop		# if (disYR > 0)
+	abs	$s6, $s6			# int disX = abs(disXR);
+	abs $s7, $s7			# int disY = abs(disYR);
+	beq	$v0, $0, fnf_set_closest	# if (closest == NULL)
+
+	# int $t0 = x^3 + y
+	mul $t0, $s6, $s6
+	mul $t0, $t0, $s6
+	add $t0, $t0, $s7
+
+	bge	$t0, $s2, fnf_cont_loop		# if (dis < cldis)
+fnf_set_closest:
+	move $v0, $s4			# closest = curr;
+	move $s2, $t0			# cldis = dis;
+fnf_cont_loop:
+	add $s4, $s4, 16		# ++curr
+	j	fnf_loop
+
+fnf_return:
+	lw	$ra, 0($sp)
+	lw	$s0, 4($sp)
+	lw	$s1, 8($sp)
+	lw	$s2, 12($sp)
+	lw	$s3, 16($sp)
+	lw	$s4, 20($sp)
+	lw	$s5, 24($sp)
+	lw	$s6, 28($sp)
+	lw	$s7, 32($sp)
+	add	$sp, $sp, 36
+	jr	$ra					# Return
 
 check_solve_puzzle:
 	sub $sp, $sp, 4
@@ -201,302 +290,7 @@ m_end_if_spuzzle:
 	lw	$ra, 0($sp)
 	add $sp, $sp, 4
 	jr	$ra
-
-###########################################
-# int x int y predictedFallout() #
-###########################################
-
-predicted_fallout:
-#TODO:
-	lw $t0, TAN_FRUIT
-	lw $t4, FRUIT_X
-	lw $t5, FRUIT_Y
-	
-	beq $t0, 0, zero
-	bge $t0, 1, postive
-	
-negative:
-	li $t1, 300
-	div $t2, $t4, $t0	# y = x / tan(theta) 
-	bge $t2, $t1, y_300
-	
-x_0:
-	li $v0, 0
-	move $v1, $t2
-	jr $ra
-	
-	
-positive: 
-	li $t1, 300	
-	sub $t1, $t1, $t4
-	div $t2, $t1, $t0			# y = (300 - x) / Tan(theta) 
-	bge $t2, $t1, y_300			# y >= 300
-	
-x_300: 
-	li $v0, 300
-	move $v1, $t2
-	jr $ra 
-	
-y_300:
-	li $v1, 300				# y = 300
-	mul	 $v0, $t0, 300
-	jr $ra
-	
-zero:
-	lw $v0, FRUIT_X
-	li $v1, 300
-	jr $ra
-
-
-
-jr $ra #wat
-
-################
-# void chase() #
-################
-chase:
-	sub $sp, $sp, 12
-	sw 	$a0, 0($sp)
-	sw	$a1, 4($sp)
-	sw	$ra, 8($sp)
-	
-	jal catchable
-	
-	lw 	$a0, 0($sp)
-	lw	$a1, 4($sp)
-	lw	$ra, 8($sp)
-	
-	beq $v0, $0, dont_chase
-	
-	#TO DO: Change velocity towards Predicted fruit
-	jal go_to_location	
-	
-dont_chase:
-	la $t0, fruit_data 
-	sw $t0, FRUIT_SCAN
-	lw $t1, FRUIT_PTR
-	add $t1, $t1, 16
-	sw $t1, FRUIT_PTR
-	
-	lw $t1, 0($t1)
-	sw $t1, FRUIT_ID		# Changing ID To Catch
-	
-	lw $a0, 0($sp)
-	lw	$a1, 4($sp)
-	lw	$ra, 8($sp)
-	add $sp, $sp, 12
-	jr		$ra
-
-
-#######################
-#  bool catchable(int x, int y, fruit* frt)       
-#######################
-
-catchable:
-	sub	$sp, $sp, 12
-	sw	$ra, 0($sp)
-	sw	$s0, 4($sp)
-	sw	$s1, 8($sp)
-	lw	$s0, BOT_X
-	lw	$s1, BOT_Y
-	
-	# Distance Formula
-	sub $a0, $a0, $s0	  # x value difference
-	abs $a0, $a0
-	sub $a1, $a1, $s1     # Y value difference
-	abs $a1, $a1
-	
-	jal euclidean_dist
-	
-	div $s0, $v0, 100	# time for fruit
-	div $s1, $v0, 1000	# time for robot
-	
-	bge $s1, $s0, c_end
-	li $v0, 1
-	j c_return
-c_end:
-	li $v0, 0
-c_return:
-	lw	$ra, 0($sp)
-	lw	$s0, 4($sp)
-	lw	$s1, 8($sp)
-	add	$sp, $sp, 12
-	jr	$ra
-
-
-#####################################
-# void go_to_location(int x, int y) #
-# goes to a give location(REWORKING TO GO WITH PAUL'S NEW CODE) #
-#####################################	
-go_to_location:
-	sub $sp, $s0, 12
-	sw	 $ra, 0($sp)
-	sw  $s0, 4($sp)
-	sw  $s1, 8($sp)
-
-	move $s0, $a0
-	move $s1, $a1
-
-	lw $t9, BOT_X # bots x coord
-	lw $t8, BOT_Y # bots y coord
-	beq	$t9, $a0, at_x # check if we are at the x_coord
-	beq	$t8, $a1, at_y # check if we are at the y_coord
-	
-gtl_loop:
-	sub	$a0, $a0, $t9 # puts the fruits x - bot x into the first arg
-	sub $a1, $a1, $t8 # puts the fruits y - bot y into the second arg
-	jal sb_arctan     # v0 should have the angle we need now (Going to need to test this)
-	sw	$v0, ANGLE
-	li	$t6, 1
-	sw	$t6, ANGLE_CONTROL
-	li	$t7, 10
-	sw	$t7, VELOCITY
-	j	go_to_location
-
-at_x:
-	lw $t8, BOT_Y # bots y coord
-	beq	$t8, $s1, at_location
-	j	gtl_loop
-
-at_y:
-	lw $t8, BOT_Y # bots y coord
-	beq	$t9, $s0, at_location
-	j	gtl_loop
-	
-at_location:
-	lw	 $ra, 0($sp)
-	lw  $s0, 4($sp)
-	lw  $s1, 8($sp)
-	add $sp, $s0, 12
-	jr	$ra #just returns to whatever called it
-
-
-###########################################
-# fruit* find_closest_fruit(int minDistY) #
-###########################################
-find_closest_fruit:
-        sub     $sp, $sp, 36
-        sw      $ra, 0($sp)
-        sw      $s0, 4($sp)
-        sw      $s1, 8($sp)
-        sw      $s2, 12($sp)
-        sw      $s3, 16($sp)
-        sw      $s4, 20($sp)
-        sw      $s5, 24($sp)
-        sw      $s6, 28($sp)
-        sw      $s7, 32($sp)
-        # Get bot coordinates
-        la      $s0, BOT_X
-        la      $s1, BOT_Y
-        lw      $s0, 0($s0)                     # int botX
-        lw      $s1, 0($s1)                     # int botY
-        # Establish variables
-        and     $v0, $v0, $0            # fruit closest
-        and     $s2, $s2, $0            # int cldisx
-        and     $s3, $s3, $0            # int cldisy
-        la      $s4, fruit_data         # fruit *curr
-        sw      $s4, FRUIT_SCAN         # Populate array
-fnf_loop:
-        lw      $s5, 0($s4)                 # fruit currF = *curr;
-        beq     $s5, $0, fnf_return     	# if (currF == NULL) break;
-        lw      $s6, 8($s4)                 # int currFX = currF.x;
-        sub     $s6, $s0, $s6           	# int disXR = botX - currFX;
-        lw      $s7, 12($s4)            	# int currFY = currF.y;
-        sub     $s7, $s1, $s7           	# int disYR = botY - currFY;
-        abs     $s6, $s6                    # int disX = abs(disXR);
-        abs		$s7, $s7                    # int disY = abs(disYR);
-        beq     $v0, $0, fnf_set_closest    # if (closest == NULL)
-        bge     $s6, $s2, fnf_cont_loop     # if (disX < cldisX)
-        bge     $s7, $s3, fnf_cont_loop     # if (disY < cldisY)
-fnf_set_closest:
-        move $v0, $s4                   # closest = curr;
-        move $s2, $s6                   # cldisX = disX;
-        move $s3, $s7                   # cldisY = disY;
-fnf_cont_loop:
-        add $s4, $s4, 16                # ++curr
-        j       fnf_loop
-fnf_return:
-        lw      $ra, 0($sp)
-        lw      $s0, 4($sp)
-        lw      $s1, 8($sp)
-        lw      $s2, 12($sp)
-        lw      $s3, 16($sp)
-        lw      $s4, 20($sp)
-        lw      $s5, 24($sp)
-        lw      $s6, 28($sp)
-        lw      $s7, 32($sp)
-        add     $sp, $sp, 36
-        jr      $ra # Return
-
-
-##########################################
-# float euclidean_dist(float x, float y) #
-##########################################
-euclidean_dist:
-	mul		$a0, $a0, $a0	# x^2
-	mul		$a1, $a1, $a1	# y^2
-	add		$v0, $a0, $a1	# x^2 + y^2
-	mtc1	$v0, $f0
-	cvt.s.w	$f0, $f0	# float(x^2 + y^2)
-	sqrt.s	$f0, $f0	# sqrt(x^2 + y^2)
-	cvt.w.s	$f0, $f0	# int(sqrt(...))
-	mfc1	$v0, $f0
-	jr		$ra
-
-
-###############################
-# int sb_arctan(int x, int y) #
-###############################
-sb_arctan:
-	li		$v0, 0		# angle = 0;
-
-	abs		$t0, $a0	# get absolute values
-	abs		$t1, $a1
-	ble		$t1, $t0, no_TURN_90	  
-
-	## if (abs(y) > abs(x)) { rotate 90 degrees }
-	move	$t0, $a1	# int temp = y;
-	neg		$a1, $a0	# y = -x;      
-	move	$a0, $t0	# x = temp;    
-	li		$v0, 90		# angle = 90;  
-
-no_TURN_90:
-	bgez	$a0, pos_x 	# skip if (x >= 0)
-
-	## if (x < 0)
-	add		$v0, $v0, 180	# angle += 180;
-
-pos_x:
-	mtc1	$a0, $f0
-	mtc1	$a1, $f1
-	cvt.s.w $f0, $f0	# convert from ints to floats
-	cvt.s.w $f1, $f1
-	
-	div.s	$f0, $f1, $f0	# float v = (float) y / (float) x;
-
-	mul.s	$f1, $f0, $f0	# v^^2
-	mul.s	$f2, $f1, $f0	# v^^3
-	l.s		$f3, three	# load 5.0
-	div.s 	$f3, $f2, $f3	# v^^3/3
-	sub.s	$f6, $f0, $f3	# v - v^^3/3
-
-	mul.s	$f4, $f1, $f2	# v^^5
-	l.s		$f5, five	# load 3.0
-	div.s 	$f5, $f4, $f5	# v^^5/5
-	add.s	$f6, $f6, $f5	# value = v - v^^3/3 + v^^5/5
-
-	l.s		$f8, PI		# load PI
-	div.s	$f6, $f6, $f8	# value / PI
-	l.s		$f7, F180	# load 180.0
-	mul.s	$f6, $f6, $f7	# 180.0 * value / PI
-
-	cvt.w.s $f6, $f6	# convert "delta" back to integer
-	mfc1	$t0, $f6
-	add		$v0, $v0, $t0	# angle += delta
-
-	jr 	$ra
-
-
+   
 #############################
 # Node* allocate_new_node() #
 #############################
@@ -758,53 +552,54 @@ sn_return:
 	# Jump back to caller function
 	jr		$ra
 
+   
+.kdata # Kernel ASM data
 
-.kdata				# interrupt handler data (separated just for readability)
-chunkIH:	.space 8	# space for two registers
+chunkIH:		.space 8	# Space for two kernel registers
 non_intrpt_str:	.asciiz "Non-interrupt exception\n"
 unhandled_str:	.asciiz "Unhandled interrupt type\n"
 
+.ktext 0x80000180 # Kernel ASM code
 
-.ktext 0x80000180
 interrupt_handler:
 .set noat
-	move	$k1, $at		# Save $at                               
+	move	$k1, $at		# Save $at.
 .set at
 	la	$k0, chunkIH
-	sw	$a0, 0($k0)		# Get some free registers                  
-	sw	$a1, 4($k0)		# by storing them to a global variable     
+	sw	$a0, 0($k0)			# Get some free registers...
+	sw	$a1, 4($k0)			# by storing them to a global variable
 
-	mfc0	$k0, $13		# Get Cause register                       
-	srl	$a0, $k0, 2                
-	and	$a0, $a0, 0xf		# ExcCode field                            
-	bne	$a0, 0, non_intrpt         
+	mfc0	$k0, $13		# Get Cause register
+	srl	$a0, $k0, 2
+	and	$a0, $a0, 0xf		# ExcCode field
+	bne	$a0, 0, non_intrpt
 
-interrupt_dispatch:			# Interrupt:                             
-	mfc0	$k0, $13		# Get Cause register, again                 
-	beq	$k0, 0, done		# handled all outstanding interrupts
+interrupt_dispatch:			# Interrupt:
+	mfc0	$k0, $13		# 	Get Cause register, again
+	beq	$k0, 0, done		# 	Handled all outstanding interrupts
 	
 	and $a0, $k0, ENERGY_MASK
 	bne $a0, 0, energy_interrupt
 	
 	and $a0, $k0, REQ_PUZ_MASK
-	bne $a0, 0, puzzle_interrupt    
+	bne $a0, 0, puzzle_interrupt
 
-	and	$a0, $k0, BONK_MASK	# is there a bonk interrupt?                
-	bne	$a0, 0, bonk_interrupt   
+	and	$a0, $k0, BONK_MASK		# Is there a bonk interrupt?
+	bne	$a0, 0, bonk_interrupt
 
-	and	$a0, $k0, TIMER_MASK	# is there a timer interrupt?
-	bne	$a0, 0, timer_interrupt
-
-	and	$a0, $k0, SMOOSHED_MASK # is there a smooshed mask?
+	and	$a0, $k0, SMOOSHED_MASK	# Is there a smoosh interrupt?
 	bne	$a0, 0, smooshed_interrupt
 
-	# add dispatch for other interrupt types here.
+	and	$a0, $k0, TIMER_MASK	# Is there a timer interrupt?
+	bne	$a0, 0, timer_interrupt
 
-	li	$v0, PRINT_STRING	# Unhandled interrupt types
+	# TODO: Add dispatch for other interrupt types here
+
+	li	$v0, PRINT_STRING		# Unhandled interrupt types
 	la	$a0, unhandled_str
 	syscall 
 	j	done
-
+	
 energy_interrupt:
 	sw	$a1, ENERGY_ACK		# acknowledge interrupt
 	
@@ -827,37 +622,93 @@ puzzle_interrupt:
 	j	interrupt_dispatch
 
 bonk_interrupt:
-	li	$a0, 1
-	sw	$a0, FRUIT_SMASH		# smashes
-	lw	$a1, SMOOSHED_COUNT
-	sub	$a1, $a1, 1		# updates smoosh_count
-	sw	$a1, SMOOSHED_COUNT
-	sw	$a1, BONK_ACK		# acknowledge interrupt
-	sw	$zero, VELOCITY		# ???
+
+	# Set bot status
+	la	$a0, BOT_STATUS
+	li	$a1, 4
+	sw	$a1, 0($a0)
 	
-	j	interrupt_dispatch	# see if other interrupts are waiting
+	# Smash fruits
+	la	$k0, FRUIT_SMASH
+	la	$k1, smooshed_fruit
+	lw	$a0, 0($k1)
+bi_smash_loop:
+	ble	$a0, $0, bi_end_smash_loop
+	sw	$a0, 0($k0)			# Smash a fruit
+	sub	$a0, $a0, 1
+	j	bi_smash_loop
+
+bi_end_smash_loop:
+	sw	$a0, 0($k1)
+	sw	$a1, BONK_ACK		# Acknowledge interrupt
+
+	# Drive back up
+	la	$a0, ANGLE
+	li	$a1, 270
+	sw	$a1, 0($a0)
+	la	$a0, ANGLE_CONTROL
+	li	$a1, 1
+	sw	$a1, 0($a0)
+	la	$a0, VELOCITY
+	li	$a1, 10
+	sw	$a1, 0($a0)
+
+	la	$k0, BOT_Y
+	li	$k1, 275			# Minimum dist from bottom
+bi_drive_loop:
+	lw	$a1, 0($k0)
+	ble $a1, $k1, bi_end_drive_loop
+	j	bi_drive_loop
+
+bi_end_drive_loop:
+	sw	$0, 0($a0)
+
+	# Set bot status
+	la	$a0, BOT_STATUS
+	li	$a1, 0
+	sw	$a1, 0($a0)
+
+	j	interrupt_dispatch	# See if other interrupts are waiting
+
+smooshed_interrupt:	
+	
+	sw	$a1, SMOOSHED_ACK	# Acknowledge interrupt
+
+	# TODO: Smash fruit (bonk)
+
+	la	$a0, smooshed_fruit
+	lw	$a1, 0($a0)
+	add $a1, $a1, 1
+	sw	$a1, 0($a0)
+
+	# Check to smash fruit
+	li	$a0, 5
+	blt	$a1, $a0, si_continue
+
+	# Set bot status
+	la	$a0, BOT_STATUS
+	li	$a1, 3
+	sw	$a1, 0($a0)
+
+si_continue:
+	j	interrupt_dispatch	# See if other interrupts are waiting
 
 timer_interrupt:
+	sw	$a1, TIMER_ACK		# Acknowledge interrupt
 
-smooshed_interrupt:
-	li	$a0, 1
-	sw	$a0, SMOOSHED_ACK
-	lw	$a1, SMOOSHED_COUNT
-	add	$a1, $a1, 1
-	sw	$a1, SMOOSHED_COUNT
+	# TODO: Respond to timer
 
-	j	interrupt_dispatch
+	j	interrupt_dispatch	# See if other interrupts are waiting
 
-	
-non_intrpt:				# was some non-interrupt
+non_intrpt:					# Was some non-interrupt
 	li	$v0, PRINT_STRING
 	la	$a0, non_intrpt_str
-	syscall				# print out an error message
-	# fall through to done
+	syscall					# Print out an error message
+	# Fall through to done #
 
 done:
 	la	$k0, chunkIH
-	lw	$a0, 0($k0)		# Restore saved registers
+	lw	$a0, 0($k0)			# Restore saved registers
 	lw	$a1, 4($k0)
 .set noat
 	move	$at, $k1		# Restore $at
