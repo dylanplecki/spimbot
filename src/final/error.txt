@@ -1,0 +1,14 @@
+bot 0: requested puzzle word at addr 10012108
+bot 0: successfully delivered word
+bot 0: Reading solution from bot at addr 10012260
+bot 0: sol: 14,21:N 14,20:X 15,20:P 15,19:C 16,19:B 17,19:Y 18,19:A 18,20:C 18,21:A 19,21:V 19,22:J 20,22:D 20,21:L 21,21:J 22,21:Z 22,20:C 21,20:C 20,20:F 19,20:I
+bot 0: submitted correct solution at addr 10012260 yay!
+bot 0: bonk interrupt
+bot 0: attempted to smash nonexistent fruit >:(
+bot 0: bonk interrupt
+bot 0: attempted to smash nonexistent fruit >:(
+bot 0: bonk interrupt
+bot 0: attempted to smash nonexistent fruit >:(
+bot 0: bonk interrupt
+bot 0: attempted to smash nonexistent fruit >:(
+bot 0: out of energy

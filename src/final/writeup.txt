@@ -1,0 +1,4 @@
+For now, we are finding the closest fruit and smooshing it. 
+
+Interesting optimizations:
+None
