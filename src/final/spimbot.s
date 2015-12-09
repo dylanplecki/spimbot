@@ -194,8 +194,9 @@ m_if_solve_puzzle:
 	and	$t1, $t1, $0
 	lb	$t1, 0($t0)
 	beq	$t1, $0, m_end_if_spuzzle
-	sb	$0, 0($t0)
 	jal	solve_puzzle
+	la  $t0, to_solve_puzzle
+	sb	$0, 0($t0)
 m_end_if_spuzzle:
 	lw	$ra, 0($sp)
 	add $sp, $sp, 4
