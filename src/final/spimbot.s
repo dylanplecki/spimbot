@@ -542,7 +542,8 @@ solve_puzzle:
 	lw	$s2, 0($s0)			# num_rows
 	lw	$s3, 4($s0)			# num_columns
 	add	$s0, $s0, 8
-	lb	$s6, 0($s1)
+	lb	$s6, 0($s1)			# word[0]
+	add	$s1, $s1, 1
 	beq	$s6, $0, sp_return	# Null word base-case
 	# Loop initiation
 	and	$s4, $s4, $0		# row
