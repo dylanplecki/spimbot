@@ -281,13 +281,11 @@ check_solve_puzzle:
 	sw	$ra, 0($sp)
 	# Solve a puzzle if requested
 m_if_solve_puzzle:
-	la  $t0, to_solve_puzzle
 	and	$t1, $t1, $0
-	lb	$t1, 0($t0)
+	lb	$t1, to_solve_puzzle
 	beq	$t1, $0, m_end_if_spuzzle
 	jal	solve_puzzle
-	la  $t0, to_solve_puzzle
-	sb	$0, 0($t0)
+	sb	$0, to_solve_puzzle
 m_end_if_spuzzle:
 	lw	$ra, 0($sp)
 	add $sp, $sp, 4

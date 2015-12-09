@@ -114,6 +114,7 @@ loop:
 move_right:
 	li $a0, 0
 	sw $a0, ANGLE
+	li $a1, 1
 	sw $a1, ANGLE_CONTROL
 	li	$t2, 10
 	sw	$t2, VELOCITY		# drive
@@ -126,6 +127,7 @@ iterate_right:
 move_left:
 	li $a0, 180
 	sw $a0, ANGLE
+	li $a1, 1
 	sw $a1, ANGLE_CONTROL
 	li	$t2, 10
 	sw	$t2, VELOCITY		# drive
@@ -144,8 +146,9 @@ stay:
 	j	stay
 
 goto_smoosh:
-	li $a0, 90
-	sw $a0, ANGLE
+	li $t0, 90
+	sw $t0, ANGLE
+	li $a1, 1
 	sw $a1, ANGLE_CONTROL
 	li	$t2, 10
 	sw	$t2, VELOCITY		# drive
