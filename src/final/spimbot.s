@@ -109,7 +109,7 @@ at_bottom:
 	
 	jal	check_solve_puzzle
 	
-	li	$t5, 1
+	li	$t5, 4
 	lw	$t2, SMOOSHED_COUNT # loads smooshed count
 	bge	$t2, $t5, smash		# if smooshed count is >= 1, smash
 
