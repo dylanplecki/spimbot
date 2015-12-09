@@ -1,4 +1,8 @@
+.data
+
 SMOOSHED_COUNT: .word 0
+
+NODE_SIZE = 12
 
 # syscall constants
 PRINT_STRING	= 4
