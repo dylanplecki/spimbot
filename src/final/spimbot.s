@@ -61,8 +61,10 @@ puzzle_grid:		.space 8192
 puzzle_word:		.space 128
 .align 2
 node_memory:		.space 4096
+.align 2
 new_node_address: .word node_memory
 
+.align 2
 to_solve_puzzle: .byte 0
 
 directions:

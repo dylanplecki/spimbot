@@ -1,4 +1,4 @@
 For now, we are finding the closest fruit and smooshing it. 
 
 Interesting optimizations:
-None
+We used a lot of old code from lab10 and tried to solved the puzzles at the most optimal time
