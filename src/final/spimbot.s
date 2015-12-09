@@ -543,7 +543,6 @@ solve_puzzle:
 	lw	$s3, 4($s0)			# num_columns
 	add	$s0, $s0, 8
 	lb	$s6, 0($s1)			# word[0]
-	add	$s1, $s1, 1
 	beq	$s6, $0, sp_return	# Null word base-case
 	# Loop initiation
 	and	$s4, $s4, $0		# row
@@ -557,7 +556,7 @@ sp_c_loop:
 	add		$t0, $t0, $s5				# next_row * num_cols + next_col
 	add		$t0, $t0, $s0				# &(puzzle[next_row * num_cols + next_col])
 	lb		   $t0, 0($t0)
-	bne		$t0, $s6, sp_cont_loop		# Continue loop if puzzle[i][j] != word[0]
+	#bne		$t0, $s6, sp_cont_loop		# Continue loop if puzzle[i][j] != word[0]
 	# Call to search_neighbors
    sub   $a0, $s0, 8
 	move	$a1, $s1
