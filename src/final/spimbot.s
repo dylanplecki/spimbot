@@ -809,11 +809,11 @@ energy_interrupt:
 	sw	$a1, ENERGY_ACK		# acknowledge interrupt
 	
 	# Request Puzzle Interrupt
-	lb	$t0, to_solve_puzzle
-	bne	$t0, $0, interrupt_dispatch
-	la  $t0, puzzle_grid
-	la  $t1, REQUEST_PUZZLE
-	sw	$t0, 0($t1)
+	lb	$a0, to_solve_puzzle
+	bne	$a0, $0, interrupt_dispatch
+	la  $a0, puzzle_grid
+	la  $a1, REQUEST_PUZZLE
+	sw	$a0, 0($a1)
 	
 	j	interrupt_dispatch
 
@@ -827,11 +827,11 @@ puzzle_interrupt:
 	j	interrupt_dispatch
 
 bonk_interrupt:
-	li	$t1, 1
-	sw	$t1, FRUIT_SMASH		# smashes
-	lw	$t9, SMOOSHED_COUNT
-	sub	$t9, $t9, 1		# updates smoosh_count
-	sw	$t9, SMOOSHED_COUNT
+	li	$a0, 1
+	sw	$a0, FRUIT_SMASH		# smashes
+	lw	$a1, SMOOSHED_COUNT
+	sub	$a1, $a1, 1		# updates smoosh_count
+	sw	$a1, SMOOSHED_COUNT
 	sw	$a1, BONK_ACK		# acknowledge interrupt
 	sw	$zero, VELOCITY		# ???
 	
@@ -840,11 +840,11 @@ bonk_interrupt:
 timer_interrupt:
 
 smooshed_interrupt:
-	li	$t1, 1
-	sw	$t1, SMOOSHED_ACK
-	lw	$t9, SMOOSHED_COUNT
-	add	$t9, $t9, 1
-	sw	$t9, SMOOSHED_COUNT
+	li	$a0, 1
+	sw	$a0, SMOOSHED_ACK
+	lw	$a1, SMOOSHED_COUNT
+	add	$a1, $a1, 1
+	sw	$a1, SMOOSHED_COUNT
 
 	j	interrupt_dispatch
 
