@@ -107,15 +107,7 @@ at_bottom:
 	la	$t0, fruit_data
 	sw	$t0, FRUIT_SCAN
 	
-	# Solve a puzzle if requested
-m_if_solve_puzzle:
-	la  $t0, to_solve_puzzle
-	and	$t1, $t1, $0
-	lb	$t1, 0($t0)
-	beq	$t1, $0, m_end_if_spuzzle
-	sb	$0, 0($t0)
-	jal	solve_puzzle
-m_end_if_spuzzle:
+	jal	check_solve_puzzle
 	
 	li	$t5, 1
 	lw	$t2, SMOOSHED_COUNT # loads smooshed count
@@ -134,6 +126,8 @@ m_end_if_spuzzle:
 botXGreater:
 	la	$t0, fruit_data
 	sw	$t0, FRUIT_SCAN
+	
+	jal	check_solve_puzzle
 
 	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
 	lw	$t9, BOT_X # or la
@@ -156,6 +150,8 @@ botXGreater:
 botXLess:
 	la	$t0, fruit_data
 	sw	$t0, FRUIT_SCAN
+	
+	jal	check_solve_puzzle
 
 	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
 	lw	$t9, BOT_X # or la
@@ -188,6 +184,22 @@ smash:
 
 	j	at_bottom
 
+
+check_solve_puzzle:
+	sub $sp, $sp, 4
+	sw	$ra, 0($sp)
+	# Solve a puzzle if requested
+m_if_solve_puzzle:
+	la  $t0, to_solve_puzzle
+	and	$t1, $t1, $0
+	lb	$t1, 0($t0)
+	beq	$t1, $0, m_end_if_spuzzle
+	sb	$0, 0($t0)
+	jal	solve_puzzle
+m_end_if_spuzzle:
+	lw	$ra, 0($sp)
+	add $sp, $sp, 4
+	jr	$ra
 
 ###########################################
 # int x int y predictedFallout() #
@@ -796,6 +808,8 @@ energy_interrupt:
 	sw	$a1, ENERGY_ACK		# acknowledge interrupt
 	
 	# Request Puzzle Interrupt
+	lb	$t0, to_solve_puzzle
+	bne	$t0, $0, interrupt_dispatch
 	la  $t0, puzzle_grid
 	la  $t1, REQUEST_PUZZLE
 	sw	$t0, 0($t1)
