@@ -1,66 +1,158 @@
+SMOOSHED_COUNT: .word 0
+
 # syscall constants
-PRINT_STRING  = 4
+PRINT_STRING	= 4
 
 # spimbot constants
-VELOCITY      = 0xffff0010
-ANGLE         = 0xffff0014
-ANGLE_CONTROL = 0xffff0018
-BOT_X         = 0xffff0020
-BOT_Y         = 0xffff0024
+VELOCITY	= 0xffff0010
+ANGLE		= 0xffff0014
+ANGLE_CONTROL	= 0xffff0018
+BOT_X		= 0xffff0020
+BOT_Y		= 0xffff0024
 
-OTHER_BOT_X = 0xffff00a0
-OTHER_BOT_Y = 0xffff00a4
+BONK_MASK	= 0x1000
+BONK_ACK	= 0xffff0060
 
-FRUIT_SMOOSHED_ACK = 0xffff0064
-FRUIT_SMOOSHED_INT_MASK = 0x2000
+TIMER		= 0xffff001c
+TIMER_MASK	= 0x8000
+TIMER_ACK	= 0xffff006c
 
-FRUIT_SMASH = 0xffff0068
-FRUIT_SCAN    = 0xffff005c
+# fruit constants
+FRUIT_SCAN	= 0xffff005c
+FRUIT_SMASH	= 0xffff0068
 
-BONK_MASK     = 0x1000
-BONK_ACK      = 0xffff0060
+SMOOSHED_MASK	= 0x2000
+SMOOSHED_ACK	= 0xffff0064
 
-TIMER         = 0xffff001c
-TIMER_MASK    = 0x8000
-TIMER_ACK     = 0xffff006c
+# could be useful for debugging
+PRINT_INT	= 0xffff0080
 
-OUT_OF_ENERGY_ACK       = 0xffff00c4
-OUT_OF_ENERGY_INT_MASK  = 0x4000
+#FRUIT_SCAN = 0xffff005c
 
-GET_ENERGY = 0xffff00c8
 
-REQUEST_PUZZLE = 0xffff00d0
-SUBMIT_SOLUTION = 0xffff00d4
-
-REQUEST_PUZZLE_ACK = 0xffff00d8
-REQUEST_PUZZLE_INT_MASK = 0x800
-
-REQUEST_WORD = 0xffff00dc
-
-SMOOSHED: .word 0
+.align 2
+fruit_data: .space 260
 
 .text
+	# NOTES
+	# must use bonk_interrupt
+	# once inside bonk_interrupt, you should write to the FRUIT_SMASH mem mapped io
+	# FRUIT_SMASH will only work if you are at the bottom of the map and it the interrupt handler
+	# SPIMbot is considered to be in the bonk_interrupt when the bonk bit in the Cause register is set to 1. 
+	# YOU MUST SMASH ALL FRUITS YOU WANT TO BEFORE ACKNOWLEDGING THE BONK INTERRUPT
+	# acknowledging the interrupt will clear the bonk bit in the Cause reg and all writes to FRUIT_SMASH will fail.
+	# 
+	# make use of the fruit_smooshed interrupt
+
 main:
-	# your code
-	li	$t4, BONK_MASK				# bonk interrupt bit
-	or $t4, $t4, FRUIT_SMOOSHED_INT_MASK
-	or $t4, $t4, TIMER_MASK
-	or	$t4, $t4, 1				# global interrupt enable
-	mtc0	$t4, $12				# set interrupt mask (Status register)
-
-	li $t0, 0
-	sw $t0, VELOCITY
-
-j main
-
-
+	li	$t9, BONK_MASK	
+	li	$t1, SMOOSHED_MASK
+	or	$t9, $t1, $t9
+	or	$t9, $t9, 1
+	mtc0	$t9, $12
 	
 
 
+	j moveToBottom
+
+moveToBottom:
+	lw	$t5, BOT_Y
+	
+	li	$t1, 90
+	sw	$t1, ANGLE
+
+	li	$t2, 1
+	sw	$t2, ANGLE_CONTROL
+
+	
+	bge	$t5, 290, at_bottom
+
+	j moveToBottom
+
+
+at_bottom:
+	# before moving in any direction, check SMOOSHED_COUNT and smash if there is one in there
+	# to smash go 90 degrees and go back when done smashing
+	la	$t0, fruit_data
+	sw	$t0, FRUIT_SCAN
+	
+	li	$t5, 1
+	lw	$t2, SMOOSHED_COUNT # loads smooshed count
+	bge	$t2, $t5, smash		# if smooshed count is >= 1, smash
+
+	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
+	lw	$t9, BOT_X # or la
+	# if target x location is greater than BOT_X, bot should go right to smoosh
+	# else bot should go left to smoosh
+	
+	bge	$t9, $t1, botXGreater
+	bge	$t1, $t9, botXLess
+
+	j	at_bottom
+
+botXGreater:
+	la	$t0, fruit_data
+	sw	$t0, FRUIT_SCAN
+
+	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
+	lw	$t9, BOT_X # or la
+
+	li	$t3, 180
+	sw	$t3, ANGLE
+	
+	li	$t4, 1
+	sw	$t4, ANGLE_CONTROL
+
+	li	$t5, 10
+	sw	$t5, VELOCITY
+
+	ble	$t9, $t1, at_bottom # don't know which break it should be
+
+
+	j	botXGreater
+
+
+botXLess:
+	la	$t0, fruit_data
+	sw	$t0, FRUIT_SCAN
+
+	lw	$t1, 8($t0) # should set $t1 to the first fruit's x location
+	lw	$t9, BOT_X # or la
+
+	li	$t3, 0
+	sw	$t3, ANGLE
+	
+	li	$t4, 1
+	sw	$t4, ANGLE_CONTROL
+
+	li	$t5, 10
+	sw	$t5, VELOCITY
+
+
+	bge	$t9, $t1, at_bottom
+
+
+
+	j botXLess	
+
+smash:
+	li	$t9, 90	
+	sw	$t9, ANGLE
+	
+	li	$t1, 1
+	sw	$t1, ANGLE_CONTROL
+	
+	li	$t2, 5
+	sw	$t2, VELOCITY
+
+	j	at_bottom
+
+
 .kdata				# interrupt handler data (separated just for readability)
-chunkIH:	.space 12	# space for two registers
+chunkIH:	.space 8	# space for two registers
 non_intrpt_str:	.asciiz "Non-interrupt exception\n"
 unhandled_str:	.asciiz "Unhandled interrupt type\n"
+
 
 .ktext 0x80000180
 interrupt_handler:
@@ -69,8 +161,7 @@ interrupt_handler:
 .set at
 	la	$k0, chunkIH
 	sw	$a0, 0($k0)		# Get some free registers                  
-	sw	$a1, 4($k0)		# by storing them to a global variable 
-	sw $v0, 8($k0)    
+	sw	$a1, 4($k0)		# by storing them to a global variable     
 
 	mfc0	$k0, $13		# Get Cause register                       
 	srl	$a0, $k0, 2                
@@ -87,7 +178,7 @@ interrupt_dispatch:			# Interrupt:
 	and	$a0, $k0, TIMER_MASK	# is there a timer interrupt?
 	bne	$a0, 0, timer_interrupt
 
-	and 	$a0, $k0, FRUIT_SMOOSHED_INT_MASK
+	and	$a0, $k0, SMOOSHED_MASK # is there a smooshed mask?
 	bne	$a0, 0, smooshed_interrupt
 
 	# add dispatch for other interrupt types here.
@@ -98,39 +189,28 @@ interrupt_dispatch:			# Interrupt:
 	j	done
 
 bonk_interrupt:
-	lw $a1, SMOOSHED
-
-	# Check if there are any caught fruit and if so smash
-	beq $a1, $zero, ack
-	sw  $a1, FRUIT_SMASH
-	
-	add $a1, $a1, -1				# Smash one then decrease smoosh count
-	sw  $a1, SMOOSHED    
-	
-
-ack:
+	li	$t1, 1
+	sw	$t1, FRUIT_SMASH		# smashes
+	lw	$t9, SMOOSHED_COUNT
+	sub	$t9, $t9, 1		# updates smoosh_count
+	sw	$t9, SMOOSHED_COUNT
 	sw	$a1, BONK_ACK		# acknowledge interrupt
-
-	li	$a0, 0
-	sw	$a0, VELOCITY		# drive
+	sw	$zero, VELOCITY		# ???
 	
 	j	interrupt_dispatch	# see if other interrupts are waiting
 
 timer_interrupt:
-	sw	$a1, TIMER_ACK		# acknowledge interrupt
-
-	j	interrupt_dispatch	# see if other interrupts are waiting\
 
 smooshed_interrupt:
-	sw $a0, FRUIT_SMOOSHED_ACK
+	li	$t1, 1
+	sw	$t1, SMOOSHED_ACK
+	lw	$t9, SMOOSHED_COUNT
+	add	$t9, $t9, 1
+	sw	$t9, SMOOSHED_COUNT
 
-	lw $a1, SMOOSHED
-	add $a1, $a1, 1			# add one to global variable every interruupt
-	sw $a1, SMOOSHED
+	j	interrupt_dispatch
 
-	j interrupt_dispatch
 	
-
 non_intrpt:				# was some non-interrupt
 	li	$v0, PRINT_STRING
 	la	$a0, non_intrpt_str
@@ -141,11 +221,7 @@ done:
 	la	$k0, chunkIH
 	lw	$a0, 0($k0)		# Restore saved registers
 	lw	$a1, 4($k0)
-	lw $v0, 8($k0)
 .set noat
 	move	$at, $k1		# Restore $at
 .set at 
 	eret
-
-
-

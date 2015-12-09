@@ -565,7 +565,7 @@ sp_c_loop:
 	jal	search_neighbors
 	beq	$v0, $0, sp_cont_loop			# Continue loop if word not found
 	sw	$v0, SUBMIT_SOLUTION			# Submit solution if nodes are available
-	j	sp_return						# Return function
+	j	sp_return						# Return from function
 sp_cont_loop:
 	add	$s5, $s5, 1
 	j	sp_c_loop
